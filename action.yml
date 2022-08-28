@@ -1,0 +1,25 @@
+name: 'Asset & Artifact Downloader'
+description: 'Downloads a release asset, file in Docker container, or artifact from a workflow run based on branch or sha'
+inputs:
+  owner:
+    required: true
+  repo:
+    required: true
+  file:
+    description: 'A regex of which the first file found is downloaded'
+    required: true
+  ref:
+    description: 'A semver range matched to releases, or branch name, or sha'
+    required: true
+  prereleases:
+    description: 'Whether or not to include prerelease versions when treating ref as a release version'
+    default: false
+  container-package:
+    description: 'If defined, ref treated a release, and no asset found, look in a container package named this with release tag'
+  artifact-name:
+    description: 'When ref is a branch or sha, the artifact name to look for the file in'
+  token:
+    required: true
+runs:
+  using: 'node16'
+  main: 'dist/index.mjs'
