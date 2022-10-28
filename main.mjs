@@ -10,7 +10,7 @@ import core from '@actions/core';
 const owner = core.getInput('owner', {required: true});
 const repo = core.getInput('repo', {required: true});
 const file = core.getInput('file', {required: true});
-const ref = core.getInput('ref', {required: true});
+const target = core.getInput('target', {required: true});
 const prereleases = core.getInput('prereleases');
 const artifactName = core.getInput('artifact-name');
 const containerPackage = core.getInput('container-package');
@@ -18,9 +18,9 @@ const token = core.getInput('token', {required: true});
 const octokit = github.getOctokit(token);
 
 async function doGitRef() {
-   let target_ref = ref;
+   let target_ref = target;
    try {
-      target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: ref})).data.commit.sha;
+      target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: target})).data.commit.sha;
    } catch {}
 
    let all_matching_artifacts = [];
@@ -97,7 +97,7 @@ try {
    for await(const { data: releases } of octokit.paginate.iterator(octokit.rest.repos.listReleases, {owner,repo}))
       all_releases = all_releases.concat(releases);
 
-   const target_release = all_releases.filter(r => semver.satisfies(r.tag_name, ref,{includePrerelease:prereleases})).sort( (a,b) => semver.compareBuild(b.tag_name,a.tag_name))[0];
+   const target_release = all_releases.filter(r => semver.satisfies(r.tag_name, target, {includePrerelease:prereleases})).sort( (a,b) => semver.compareBuild(b.tag_name,a.tag_name))[0];
 
    if(!target_release) {
       if(artifactName === '')

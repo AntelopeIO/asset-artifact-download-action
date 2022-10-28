@@ -44505,7 +44505,7 @@ __nccwpck_require__.a(__webpack_module__, async (__webpack_handle_async_dependen
 const owner = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('owner', {required: true});
 const repo = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('repo', {required: true});
 const file = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('file', {required: true});
-const ref = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('ref', {required: true});
+const target = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('target', {required: true});
 const prereleases = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('prereleases');
 const artifactName = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('artifact-name');
 const containerPackage = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('container-package');
@@ -44513,9 +44513,9 @@ const token = _actions_core__WEBPACK_IMPORTED_MODULE_7__.getInput('token', {requ
 const octokit = _actions_github__WEBPACK_IMPORTED_MODULE_6__.getOctokit(token);
 
 async function doGitRef() {
-   let target_ref = ref;
+   let target_ref = target;
    try {
-      target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: ref})).data.commit.sha;
+      target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: target})).data.commit.sha;
    } catch {}
 
    let all_matching_artifacts = [];
@@ -44592,7 +44592,7 @@ try {
    for await(const { data: releases } of octokit.paginate.iterator(octokit.rest.repos.listReleases, {owner,repo}))
       all_releases = all_releases.concat(releases);
 
-   const target_release = all_releases.filter(r => semver__WEBPACK_IMPORTED_MODULE_3__.satisfies(r.tag_name, ref,{includePrerelease:prereleases})).sort( (a,b) => semver__WEBPACK_IMPORTED_MODULE_3__.compareBuild(b.tag_name,a.tag_name))[0];
+   const target_release = all_releases.filter(r => semver__WEBPACK_IMPORTED_MODULE_3__.satisfies(r.tag_name, target, {includePrerelease:prereleases})).sort( (a,b) => semver__WEBPACK_IMPORTED_MODULE_3__.compareBuild(b.tag_name,a.tag_name))[0];
 
    if(!target_release) {
       if(artifactName === '')

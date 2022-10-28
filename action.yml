@@ -8,7 +8,7 @@ inputs:
   file:
     description: 'A regex of which the first file found is downloaded'
     required: true
-  ref:
+  target:
     description: 'A semver range matched to releases, or branch name, or sha'
     required: true
   prereleases:
