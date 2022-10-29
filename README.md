@@ -3,7 +3,7 @@
 This action will download a release asset, a build artifact, or a file within a container package based on its inputs and what it discovers while following a set of rules useful to AntelopeIO projects.
 
 ### Changelog
-* **v2**: renamed `ref` to `target`
+* **v2**: renamed `ref` to `target`; fixes `prereleases` behavior
 
 ### Inputs
 **`owner`**, **`repo`**, and **`token`** should be self explanatory and are all required.
