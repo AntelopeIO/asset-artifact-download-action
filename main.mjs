@@ -15,7 +15,17 @@ const prereleases = core.getBooleanInput('prereleases');
 const artifactName = core.getInput('artifact-name');
 const containerPackage = core.getInput('container-package');
 const token = core.getInput('token', {required: true});
+const failOnMissingTarget = core.getBooleanInput('fail-on-missing-target', {required: true});
 const octokit = github.getOctokit(token);
+
+core.setOutput('downloaded-file', '');
+
+class NothingFoundError extends Error {
+   constructor(message) {
+     super(message);
+     this.name = 'NothingFoundError';
+   }
+ }
 
 async function doGitRef() {
    let target_ref = target;
@@ -23,13 +33,18 @@ async function doGitRef() {
       target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: target})).data.commit.sha;
    } catch {}
 
-   let all_matching_artifacts = [];
-   for await(const { data: artifacts } of octokit.paginate.iterator(octokit.rest.actions.listArtifactsForRepo, {owner,repo}))
-      all_matching_artifacts = all_matching_artifacts.concat(artifacts.filter(a => a.workflow_run.head_sha == target_ref && a.name == artifactName));
-   all_matching_artifacts.sort((a,b) => -a.updated_at.localeCompare(b.updated_at));  //newest first please
+   let all_workflow_runs_at_ref = [];
+   for await(const { data: runs } of octokit.paginate.iterator(octokit.rest.actions.listWorkflowRunsForRepo, {owner,repo,head_sha:target_ref}))
+      all_workflow_runs_at_ref = all_workflow_runs_at_ref.concat(runs);
+   all_workflow_runs_at_ref.sort((a, b) => {a.run_number - b.run_number});
 
+   let all_matching_artifacts = [];
+   for await (const run of all_workflow_runs_at_ref)
+      for await(const { data: artifacts } of octokit.paginate.iterator(octokit.rest.actions.listWorkflowRunArtifacts, {owner,repo,run_id:run.id}))
+         all_matching_artifacts = all_matching_artifacts.concat(artifacts.filter(a => a.name == artifactName));
+   
    if(all_matching_artifacts.length == 0)
-      throw new Error(`Failed to find artifact ${artifactName} with a ref ${target_ref}`);
+      throw new NothingFoundError(`Failed to find artifact ${artifactName} with a ref ${target_ref}`);
 
    const zipResp = await axios.get(all_matching_artifacts[0].archive_download_url, {responseType:"stream", headers: {"Authorization": `Bearer ${token}`}});
 
@@ -39,6 +54,7 @@ async function doGitRef() {
       if(entry.path.match(file)) {
          entry.pipe(fs.createWriteStream(entry.path));
          core.info(`Downloaded ${entry.path} from ${target_ref} artifact ${artifactName}`);
+         core.setOutput('downloaded-file', entry.path);
          foundIt = true;
       }
       else
@@ -55,6 +71,7 @@ async function doRelease(release) {
          const resp = await axios.get(asset.browser_download_url, {responseType:"stream"});
          await stream.promises.pipeline(resp.data, fs.createWriteStream(asset.name));
          core.info(`Downloaded ${asset.name} from release ${release.tag_name}`);
+         core.setOutput('downloaded-file', asset.name);
          return;
       }
    }
@@ -73,6 +90,7 @@ async function doRelease(release) {
          entry.pipe(fs.createWriteStream(entry.path));
          entry.on("end", () => {
             core.info(`Downloaded ${entry.path} from release ${release.tag_name} via ${containerPackage}`);
+            core.setOutput('downloaded-file', entry.path);
             foundIt = true;
             tarObj.abort();
          });
@@ -101,11 +119,18 @@ try {
 
    if(!target_release) {
       if(artifactName === '')
-         throw new Error("No satisfying releases found and no artifact-name set");
+         throw new NothingFoundError("No satisfying releases found and no artifact-name set");
       await doGitRef();
    }
    else
       await doRelease(target_release);
 } catch(e) {
-   core.setFailed(e.message);
+   if(e instanceof NothingFoundError) {
+      if(failOnMissingTarget)
+         core.setFailed(e.message);
+   }
+   else {
+      core.setFailed(e.message);
+   }
+      
 }
