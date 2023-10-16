@@ -25,6 +25,10 @@ inputs:
     required: true
     default: true
     description: 'Whether to fail the step if target release file or artifact-name is not found'
+  wait-for-exact-target:
+    required: true
+    default: false
+    description: 'When target is a branch or sha, whether to wait up for workflow to complete on exact target or try parents'
 outputs:
   downloaded-file:
     description: 'The name of the downloaded file, or empty string if failure'

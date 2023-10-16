@@ -3,7 +3,7 @@
 This action will download a release asset, a build artifact, or a file within a container package based on its inputs and what it discovers while following a set of rules useful to AntelopeIO projects.
 
 ### Changelog
-* **v3**: added `fail-on-missing-target`; added `downloaded-file` output; made `token` optional; reduces API usage substantially
+* **v3**: added `fail-on-missing-target` and `wait-for-exact-target-workflow` inputs; added `downloaded-file` output; made `token` optional; reduces API usage substantially
 * **v2**: renamed `ref` to `target`; fixes `prereleases` behavior
 
 ### Inputs
@@ -23,6 +23,8 @@ This action will download a release asset, a build artifact, or a file within a 
   * Action fails if the previous step fails to find a file.
 
 **`fail-on-missing-target`** is an optional boolean (defaulted to _true_) to control whether the action should fail if the `file` is not found in the case of `target` being a release, or if `artifact-name` is not found in the case of `target` being a branch or ref (which includes the situation where the branch or ref does not exist). Other failures, for example, the `file` not being found in the `artifact-name`, are still considered failures even if this is set to false.
+
+**`wait-for-exact-target`** is an optional boolean (defaulted to _false_) that controls behavior when `target` is a branch or commit and _any_ workflow has not completed at the given target. If `false`, the action will then look at the parent commit's workflows and use artifacts from them (and if that commit's workflows haven't completed, its parent, and so on). If `true`, the action will wait indefinitely for all workflows to complete (use with care!).
 
 ### Outputs
 
