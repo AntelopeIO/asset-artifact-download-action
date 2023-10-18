@@ -16,6 +16,7 @@ const artifactName = core.getInput('artifact-name');
 const containerPackage = core.getInput('container-package');
 const token = core.getInput('token', {required: true});
 const failOnMissingTarget = core.getBooleanInput('fail-on-missing-target', {required: true});
+const waitForExactTarget = core.getBooleanInput('wait-for-exact-target', {required: true});
 const octokit = github.getOctokit(token);
 
 core.setOutput('downloaded-file', '');
@@ -25,24 +26,49 @@ class NothingFoundError extends Error {
      super(message);
      this.name = 'NothingFoundError';
    }
- }
+}
 
-async function doGitRef() {
-   let target_ref = target;
-   try {
-      target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: target})).data.commit.sha;
-   } catch {}
-
+//returns workflow runs at a ref sorted by run attempt, with currently running workflow filtered out; throws if no workflows found
+async function getLatestWorkflowRuns(ref) {
    let all_workflow_runs_at_ref = [];
-   for await(const { data: runs } of octokit.paginate.iterator(octokit.rest.actions.listWorkflowRunsForRepo, {owner,repo,head_sha:target_ref}))
+   for await(const { data: runs } of octokit.paginate.iterator(octokit.rest.actions.listWorkflowRunsForRepo, {owner,repo,head_sha:ref}))
       all_workflow_runs_at_ref = all_workflow_runs_at_ref.concat(runs);
-   all_workflow_runs_at_ref.sort((a, b) => {a.run_number - b.run_number});
+   all_workflow_runs_at_ref.sort((a, b) => b.run_attempt - a.run_attempt);
+
+   //filter ourselves out
+   all_workflow_runs_at_ref = all_workflow_runs_at_ref.filter(a => a.id != Number(process.env.GITHUB_RUN_ID));
+
+   if(all_workflow_runs_at_ref.length == 0)
+      throw new Error(`No workflows found for ${ref}`);
+
+   return all_workflow_runs_at_ref;
+}
+
+async function doGitRef(target_ref) {
+   let all_workflow_runs_at_ref = await getLatestWorkflowRuns(target_ref);
+
+   if(all_workflow_runs_at_ref.filter(r => r.status != 'completed').length) {
+      if(waitForExactTarget) {
+         while(all_workflow_runs_at_ref.filter(r => r.status != 'completed').length) {
+            console.log(`Waiting for workflows at ${target_ref} to complete...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            all_workflow_runs_at_ref = await getLatestWorkflowRuns(target_ref);
+         }
+      }
+      else {
+         const { data: commit } = await octokit.rest.repos.getCommit({owner, repo, ref:target_ref});
+         if(commit.parents.length == 0)
+            throw new Error(`No parent commit for ${target_ref}`);
+         console.log(`Workflows not complete on ${target_ref}, trying parent...`);
+         return doGitRef(commit.parents[0].sha);
+     }
+   }
 
    let all_matching_artifacts = [];
    for await (const run of all_workflow_runs_at_ref)
       for await(const { data: artifacts } of octokit.paginate.iterator(octokit.rest.actions.listWorkflowRunArtifacts, {owner,repo,run_id:run.id}))
          all_matching_artifacts = all_matching_artifacts.concat(artifacts.filter(a => a.name == artifactName));
-   
+
    if(all_matching_artifacts.length == 0)
       throw new NothingFoundError(`Failed to find artifact ${artifactName} with a ref ${target_ref}`);
 
@@ -120,7 +146,11 @@ try {
    if(!target_release) {
       if(artifactName === '')
          throw new NothingFoundError("No satisfying releases found and no artifact-name set");
-      await doGitRef();
+      let target_ref = target;
+      try {
+         target_ref = (await octokit.rest.repos.getBranch({owner, repo, branch: target})).data.commit.sha;
+      } catch {}
+      await doGitRef(target_ref);
    }
    else
       await doRelease(target_release);
@@ -132,5 +162,4 @@ try {
    else {
       core.setFailed(e.message);
    }
-      
 }
