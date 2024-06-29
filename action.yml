@@ -33,5 +33,5 @@ outputs:
   downloaded-file:
     description: 'The name of the downloaded file, or empty string if failure'
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/index.mjs'

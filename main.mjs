@@ -1,11 +1,22 @@
 import axios from 'axios';
-import tar from 'tar';
+import * as tar from 'tar';
 import unzipper from 'unzipper';
 import semver from 'semver';
 import stream from 'node:stream';
 import fs from 'node:fs';
 import github from '@actions/github';
 import core from '@actions/core';
+import * as child_process from 'node:child_process';
+import { pipeline } from 'node:stream/promises';
+
+if (process.argv[2] === 'child') {
+   const msg = await new Promise((resolve) => {
+      process.on('message', (m) => resolve(m));
+   });
+   const resp = await axios.get(msg.url, {responseType:"stream", headers: {"Range": "bytes="+msg.offset+"-"+msg.end,"Authorization": `Bearer ${msg.token}`}});
+   await pipeline(resp.data, process.stdout);
+   process.exit(0);
+}
 
 const owner = core.getInput('owner', {required: true});
 const repo = core.getInput('repo', {required: true});
@@ -72,20 +83,36 @@ async function doGitRef(target_ref) {
    if(all_matching_artifacts.length == 0)
       throw new NothingFoundError(`Failed to find artifact ${artifactName} with a ref ${target_ref}`);
 
-   const zipResp = await axios.get(all_matching_artifacts[0].archive_download_url, {responseType:"stream", headers: {"Authorization": `Bearer ${token}`}});
+   const customUnzipperSource = {
+      stream: function(offset, length) {
+         const end = length ? offset + length : '';
+
+         let childp = child_process.fork(import.meta.filename, ['child'], {stdio: ["pipe", "pipe", "inherit", "ipc"]});
+         childp.send({
+            url: all_matching_artifacts[0].archive_download_url,
+            offset: offset,
+            end: end,
+            token: token
+         });
+         return childp.stdout;
+      },
+      size: async function() {
+         return((await axios.head(all_matching_artifacts[0].archive_download_url, { headers: {"Authorization": `Bearer ${token}`}}))).headers['content-length']
+      }
+    };
+
+   const directory = await unzipper.Open.custom(customUnzipperSource);
 
    let foundIt = false;
 
-   await stream.promises.pipeline(zipResp.data, unzipper.Parse().on('entry', entry => {
+   for(const entry of directory.files) {
       if(entry.path.match(file)) {
-         entry.pipe(fs.createWriteStream(entry.path));
+         await pipeline(entry.stream(), fs.createWriteStream(entry.path));
          core.info(`Downloaded ${entry.path} from ${target_ref} artifact ${artifactName}`);
          core.setOutput('downloaded-file', entry.path);
          foundIt = true;
       }
-      else
-         entry.autodrain();
-   }));
+   }
 
    if(!foundIt)
       throw new Error("Failed to find file in artifact zipfile");
@@ -110,7 +137,7 @@ async function doRelease(release) {
    const resp = await axios.get(`https://ghcr.io/token?service=registry.docker.io&scope=repository:${owner}/${containerPackage}:pull`);
    const manifestResp = await axios.get(`https://ghcr.io/v2/${owner}/${containerPackage}/manifests/${release.tag_name}`, {headers: {"Authorization": `Bearer ${resp.data.token}`}});
    const blobResp = await axios.get(`https://ghcr.io/v2/${owner}/${containerPackage}/blobs/${manifestResp.data.layers[0].digest}`, {responseType:"stream", headers: {"Authorization": `Bearer ${resp.data.token}`}});
-   const tarObj = new tar.Parse;
+   const tarObj = new tar.Parser;
    tarObj.on("entry", entry => {
       if(entry.path.match(file)) {
          entry.pipe(fs.createWriteStream(entry.path));
